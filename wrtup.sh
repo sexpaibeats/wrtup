@@ -19,9 +19,18 @@ echo -e "${C}====================================================${W}"
 echo -e "${G}   Начало первичной настройки роутера...${W}"
 echo -e "${C}====================================================${W}"
 
-# 1. Определение платформы
+# 1. Определение платформы (Безопасный системный парсинг)
+if [ -f /etc/openwrt_release ]; then
+    . /etc/openwrt_release
+    OS_VER="$DISTRIB_DESCRIPTION"
+else
+    OS_VER="OpenWrt"
+    DISTRIB_RELEASE="unknown"
+    DISTRIB_TARGET="unknown"
+    DISTRIB_ARCH="unknown"
+fi
+
 MODEL=$(cat /tmp/sysinfo/model 2>/dev/null || cat /proc/device-tree/model 2>/dev/null || echo "Unknown Router")
-OS_VER=$(grep -oP 'DISTRIB_DESCRIPTION="\K[^"]+' /etc/openwrt_release 2>/dev/null || echo "OpenWrt")
 TOTAL_RAM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
 
 if command -v apk >/dev/null 2>&1; then
@@ -37,37 +46,36 @@ else
 fi
 
 IS_GLINET=0
-grep -iq "gl.inet" /etc/openwrt_release && IS_GLINET=1
+grep -iq "gl.inet" /etc/openwrt_release 2>/dev/null && IS_GLINET=1
 
 info "Устройство: $MODEL"
 info "Система: $OS_VER | Менеджер: $PM"
 info "ОЗУ: ${TOTAL_RAM} MB"
 
-# Запрос на сетевые твики (фикс чтения из TTY для pipe-установки)
-printf "${C}[?]${W} 
+# Безопасный вывод длинного текста без конфликта кавычек
+cat << EOF
 
-Твики сети:
+${C}[?]${W} Твики сети:
 
-1. TCP Fast Open — данные начинают идти уже в первом пакете при подключении. Сайты и прокси открываются быстрее.
-Отключение "медленного старта" — если поставили видео на паузу и продолжили, скорость сразу максимальная, без разгона заново.
-Увеличение очереди соединений (somaxconn, syn_backlog) — роутер не захлёбывается, когда торрент открывает тысячи соединений или идёт всплеск трафика.
-Увеличение буфера пакетов сетевой карты — полезно для портов 2.5G: пакеты не теряются на пиках. Памяти на роутере хватает с запасом.
+1. Sysctl (Ядро и TCP):
+• TCP Fast Open — ускоряет загрузку сайтов и прокси, отправляя данные уже в первом пакете.
+• Отключение "медленного старта" — при снятии с паузы скорость загрузки сразу максимальная.
+• Увеличение буферов (somaxconn, backlog) — роутер не "захлебнется" от тысяч пиров торрента и спасет от потери пакетов на 2.5G портах.
 
-2. Настройки Wi-Fi: (AQL)
+2. AQL (Wi-Fi):
+• Аппаратно включает "честную очередь" на радиочипе. Предотвращает скачки пинга в играх, когда кто-то другой начинает скачивать тяжелые файлы по Wi-Fi.
 
-Борьба с "раздутием буфера" на Wi-Fi. Без этого: если кто-то качает файл по Wi-Fi, у остальных в играх пинг может прыгать до 100–300 мс. AQL включает честное распределение эфирного времени между устройствами — пинг остаётся стабильным, даже когда сеть загружена.
+EOF
 
-Применить ли сетевые твики (TCP, Wi-Fi AQL)? (y/N) : "
+printf "Применить ли сетевые твики (Sysctl TCP, Wi-Fi AQL)? (y/N) : "
 read APPLY_TWEAKS < /dev/tty
 
 echo "----------------------------------------------------"
 
 # 2. Добавление официальных репозиториев (OpenWrt / ImmortalWrt)
-info "Добавление стоковых репозиториев..."
-if [ -f /etc/openwrt_release ]; then
-    . /etc/openwrt_release
-    
-    if echo "$DISTRIB_DESCRIPTION" | grep -iq "immortalwrt"; then
+info "Генерация стоковых репозиториев..."
+if [ "$DISTRIB_RELEASE" != "unknown" ]; then
+    if echo "$OS_VER" | grep -iq "immortalwrt"; then
         REPO_BASE="https://mirrors.vsean.net/openwrt/releases/${DISTRIB_RELEASE}"
         IS_IMMO=1
     else
@@ -100,6 +108,8 @@ EOF
         [ "$IS_IMMO" -eq 0 ] && echo "src/gz custom_video $REPO_BASE/packages/$DISTRIB_ARCH/video" >> "$REPO_FILE"
     fi
     ok "Сгенерированы репозитории для $DISTRIB_RELEASE ($DISTRIB_TARGET)."
+else
+    warn "Не удалось определить версию, используются встроенные репозитории."
 fi
 
 info "Обновление списков пакетов..."
@@ -136,18 +146,18 @@ PACKAGES="openssh-sftp-server unzip nano-full lm-sensors ethtool iperf3 htop"
 
 for pkg in $PACKAGES; do
     if [ "$PM" = "apk" ]; then
-        if apk info -e $pkg >/dev/null 2>&1; then
+        if apk info -e "$pkg" 2>/dev/null | grep -q "^$pkg"; then
             ok "$pkg уже установлен."
         else
             info "Установка $pkg..."
-            $PM_INS $pkg >/dev/null 2>&1 && ok "$pkg установлен." || err "Ошибка установки $pkg."
+            $PM_INS "$pkg" >/dev/null 2>&1 && ok "$pkg установлен." || err "Ошибка установки $pkg."
         fi
     else
-        if opkg status $pkg 2>/dev/null | grep -q "Status: install ok installed"; then
+        if opkg status "$pkg" 2>/dev/null | grep -q "Status: install ok installed"; then
             ok "$pkg уже установлен."
         else
             info "Установка $pkg..."
-            $PM_INS $pkg >/dev/null 2>&1 && ok "$pkg установлен." || err "Ошибка установки $pkg."
+            $PM_INS "$pkg" >/dev/null 2>&1 && ok "$pkg установлен." || err "Ошибка установки $pkg."
         fi
     fi
 done
@@ -313,7 +323,6 @@ if uci get upnpd.config >/dev/null 2>&1; then
     uci set upnpd.config.external_iface='wan'
     uci set upnpd.config.log_output='1'
 
-    # Проверка, добавлены ли уже интерфейсы
     HAS_LAN=$(uci show upnpd | grep internal_iface | grep -c "'lan'")
     HAS_VPN=$(uci show upnpd | grep internal_iface | grep -c "'vpnnet'")
 
