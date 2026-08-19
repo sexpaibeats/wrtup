@@ -344,10 +344,13 @@ detect_system() {
 cleanup_broken_repos() {
   if [ "$PKG" = "apk" ]; then
     info "Очистка ошибочных ссылок на репозитории от предыдущих запусков скрипта..."
-    for f in /etc/apk/repositories /etc/apk/repositories.d/customfeeds.list /etc/apk/repositories.d/distfeeds.list; do
+    # Обязательно создаём файл, чтобы LuCI не выдавал NoDataError
+    [ -f /etc/apk/repositories ] || touch /etc/apk/repositories
+    
+    # Удаляем любые ссылки http/https, которые не оканчиваются на .adb
+    for f in /etc/apk/repositories /etc/apk/repositories.d/*.list; do
       if [ -f "$f" ]; then
-        # Удаляем строки с нашими доменами, если они НЕ заканчиваются на packages.adb
-        sed -i -e '/packages\.adb$/b' -e '/downloads\.openwrt\.org/d' -e '/mirrors\.vsean\.net/d' "$f" 2>/dev/null
+        sed -i -e '/^http/!b' -e '/\.adb$/b' -e 'd' "$f" 2>/dev/null
       fi
     done
   fi
@@ -358,9 +361,9 @@ feed_add() {
   name="$1"; url="$2"
   case "$PKG" in
     apk)
-      conf="/etc/apk/repositories.d/customfeeds.list"
+      conf="/etc/apk/repositories"
       mkdir -p /etc/apk/repositories.d
-      [ -f "$conf" ] || : > "$conf"
+      [ -f "$conf" ] || touch "$conf"
       if grep -qF "$url/packages.adb" "$conf" 2>/dev/null; then skip "Уже добавлено: $url/packages.adb"; return 0; fi
       if http_exists "$url/packages.adb"; then
         echo "$url/packages.adb" >> "$conf"
@@ -1007,7 +1010,7 @@ final_verification() {
   info " 1) Проверьте интернет на роутере: ping -c3 openwrt.org"
   info " 2) Посмотрите ошибки/предупреждения: grep -E '\\[ERR\\]|\\[WARN\\]' $LOG"
   info " 3) Повторный запуск скрипта безопасен — готовые шаги будут пропущены"
-  info " 4) Проверить репозитории вручную: cat /etc/opkg/customfeeds.conf (opkg) или cat /etc/apk/repositories.d/customfeeds.list (apk)"
+  info " 4) Проверить репозитории вручную: cat /etc/opkg/customfeeds.conf (opkg) или cat /etc/apk/repositories (apk)"
 }
 
 # ---------------------------------------------------------------------------
