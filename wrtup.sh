@@ -815,10 +815,9 @@ apply_network_tweaks() {
   section "Твики сети для снижения джиттера"
   info "tcp_fastopen=3 — ускоряет установку TCP-соединений (данные в SYN)"
   info "tcp_slow_start_after_idle=0 — не сбрасывает окно перегрузки на простаивавших соединениях"
-  info "somaxconn / netdev_max_backlog / tcp_max_syn_backlog — увеличивают очереди,"
-  info "  снижая потери пакетов при всплесках нагрузки (много соединений одновременно)"
-  info "Эффект заметнее на роутерах с большим числом клиентов; на Flint 2 с малой"
-  info "нагрузкой изменения обычно небольшие, но безвредные."
+  info "somaxconn / netdev_max_backlog / tcp_max_syn_backlog — увеличивают очереди,снижая потери пакетов при всплесках нагрузки (много соединений одновременно)"
+  info "Эффект заметнее на роутерах с большим числом клиентов"
+  
   if ask_yn "Применить сетевые sysctl-твики?" n; then
     conf="/etc/sysctl.d/99-jitter-tweaks.conf"
     mkdir -p /etc/sysctl.d
