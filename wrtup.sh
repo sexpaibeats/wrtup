@@ -66,9 +66,12 @@ ask_yn() {
     if [ "$def" = "y" ]; then hint="[Y/n]"; else hint="[y/N]"; fi
     printf '%b?%b %s %s: ' "$C_YELLOW" "$C_RESET" "$q" "$hint" > /dev/tty
     read -r ans < /dev/tty
+    # убираем возможный \r (CRLF-терминалы вроде PuTTY/Windows) и приводим к нижнему регистру,
+    # иначе пустой Enter с CRLF не совпадает с дефолтом и вопрос ошибочно считается "пропущенным"
+    ans=$(printf '%s' "$ans" | tr -d '\r' | tr '[:upper:]' '[:lower:]')
     ans="${ans:-$def}"
     case "$ans" in
-      y|Y|yes|Yes|YES|д|Д|да|Да|ДА) return 0 ;;
+      y|yes|д|да) return 0 ;;
       *) return 1 ;;
     esac
   else
@@ -82,10 +85,21 @@ ask_val() {
   if [ -r /dev/tty ]; then
     printf '%b?%b %s%s: ' "$C_YELLOW" "$C_RESET" "$q" "${def:+ [$def]}" > /dev/tty
     read -r ans < /dev/tty
+    ans=$(printf '%s' "$ans" | tr -d '\r')
     printf '%s' "${ans:-$def}"
   else
     printf '%s' "$def"
   fi
+}
+
+press_enter_to_start() {
+  if [ -r /dev/tty ]; then
+    printf '%bНажмите Enter/Return, чтобы начать настройку (Ctrl+C — отмена)...%b' "$C_YELLOW" "$C_RESET" > /dev/tty
+    read -r _ < /dev/tty
+  else
+    warn "Нет доступа к терминалу — запуск без подтверждения"
+  fi
+  printf '\n'
 }
 
 # ---------------------------------------------------------------------------
@@ -225,6 +239,27 @@ EOF
   info "Лог выполнения: $LOG"
 }
 
+show_script_description() {
+  section "Что делает этот скрипт"
+  cat <<'EOF'
+Скрипт по шагам, с вопросами перед каждым важным изменением, настроит:
+  • официальные репозитории OpenWrt и ImmortalWrt (под вашу архитектуру/версию)
+  • русский язык в панели GL.iNet и в системном интерфейсе LuCI
+  • отключение принудительной VPN-маршрутизации GL.iNet (если она есть)
+  • forkop (VPN/прокси-менеджер) и отдельную сеть vpnnet (192.168.20.0/24)
+  • MiniUPnP для автооткрытия портов (торренты, игры)
+  • zram (сжатый swap в ОЗУ)
+  • тему оформления LuCI Footstrap
+  • CPU governor "performance" и сетевые твики для снижения джиттера
+  • полезные пакеты (nano, htop, iperf3, ethtool, luci-app-temp-status и т.д.)
+  • часовой пояс по названию города
+
+Скрипт идемпотентен: то, что уже установлено/настроено, будет пропущено
+или предложено обновить повторно. Всё, что относится только к прошивке
+GL.iNet, на других прошивках будет автоматически пропущено с пометкой.
+EOF
+}
+
 # ---------------------------------------------------------------------------
 # 1. Определение системы
 # ---------------------------------------------------------------------------
@@ -236,13 +271,14 @@ detect_system() {
   [ -f /tmp/sysinfo/model ] && MODEL=$(cat /tmp/sysinfo/model 2>/dev/null)
   [ -z "$MODEL" ] && MODEL="unknown"
 
-  DISTRIB_ID="unknown"; DISTRIB_RELEASE="unknown"; DISTRIB_TARGET="unknown"
+  DISTRIB_ID="unknown"; DISTRIB_RELEASE="unknown"; DISTRIB_TARGET="unknown"; DISTRIB_ARCH="unknown"
   if [ -f /etc/openwrt_release ]; then
     # shellcheck disable=SC1091
     . /etc/openwrt_release
     DISTRIB_ID="${DISTRIB_ID:-unknown}"
     DISTRIB_RELEASE="${DISTRIB_RELEASE:-unknown}"
     DISTRIB_TARGET="${DISTRIB_TARGET:-unknown}"
+    DISTRIB_ARCH="${DISTRIB_ARCH:-unknown}"
   fi
 
   IS_GLINET="no"
@@ -256,17 +292,28 @@ detect_system() {
   else err "Не найден пакетный менеджер apk/opkg"; exit 1
   fi
 
-  ARCH="unknown"
-  if [ -f /etc/opkg/distfeeds.conf ]; then
-    ARCH=$(grep -o '/packages/[^/]*/base' /etc/opkg/distfeeds.conf 2>/dev/null | head -n1 | cut -d/ -f3)
-  fi
+  # Основной источник — DISTRIB_ARCH из /etc/openwrt_release (стандартное поле,
+  # присутствует на любой прошивке OpenWrt/ImmortalWrt/GL.iNet, apk или opkg).
+  ARCH="$DISTRIB_ARCH"
   [ -z "$ARCH" ] && ARCH="unknown"
+
+  # Фолбэк 1: opkg print-architecture — берём самую специфичную (с наивысшим приоритетом) архитектуру
+  if [ "$ARCH" = "unknown" ] && command -v opkg >/dev/null 2>&1; then
+    ARCH=$(opkg print-architecture 2>/dev/null \
+      | awk '$2!="all" && $2!="noarch"{print $3"\t"$2}' \
+      | sort -n | tail -n1 | cut -f2)
+    [ -z "$ARCH" ] && ARCH="unknown"
+  fi
+
+  # Фолбэк 2: заголовок 'Architecture:' в уже настроенных apk-репозиториях
   if [ "$ARCH" = "unknown" ] && [ -f /etc/apk/repositories ]; then
     ARCH=$(grep -o '/packages/[^/]*/base' /etc/apk/repositories 2>/dev/null | head -n1 | cut -d/ -f3)
     [ -z "$ARCH" ] && ARCH="unknown"
   fi
-  if [ "$ARCH" = "unknown" ] && command -v opkg >/dev/null 2>&1; then
-    ARCH=$(opkg print-architecture 2>/dev/null | awk '{print $2}' | grep -v '^all$' | grep -v '^noarch$' | tail -n1)
+
+  # Фолбэк 3: уже настроенные opkg-репозитории
+  if [ "$ARCH" = "unknown" ] && [ -f /etc/opkg/distfeeds.conf ]; then
+    ARCH=$(grep -o '/packages/[^/]*/base' /etc/opkg/distfeeds.conf 2>/dev/null | head -n1 | cut -d/ -f3)
     [ -z "$ARCH" ] && ARCH="unknown"
   fi
 
@@ -670,8 +717,10 @@ install_zram() {
 
 install_footstrap_theme() {
   section "Тема оформления LuCI: Footstrap"
+  theme_installed=0
   if pkg_installed "luci-theme-footstrap"; then
     skip "Тема footstrap уже установлена"
+    theme_installed=1
   else
     tmp="/tmp/footstrap_install.sh"
     if fetch_to_file "https://raw.githubusercontent.com/VizzleTF/luci-theme-footstrap/main/install.sh" "$tmp" 20; then
@@ -680,6 +729,7 @@ install_footstrap_theme() {
       rm -f "$tmp"
       if [ $rc -eq 0 ] && pkg_installed "luci-theme-footstrap"; then
         ok "Тема footstrap установлена"
+        theme_installed=1
       else
         err "Не удалось установить тему footstrap (код $rc)"; return 1
       fi
@@ -688,10 +738,20 @@ install_footstrap_theme() {
     fi
   fi
 
+  [ "$theme_installed" = "1" ] || return 0
+
+  cur_theme=$(uci get luci.main.mediaurlbase 2>/dev/null)
+  if [ "$cur_theme" = "/luci-static/footstrap" ]; then
+    skip "Footstrap уже назначена активной темой LuCI"
+    return
+  fi
+
   if ask_yn "Сделать Footstrap активной темой LuCI?" y; then
     uci set luci.main.mediaurlbase='/luci-static/footstrap' 2>>"$LOG"
     uci commit luci
     ok "Тема footstrap назначена активной"
+  else
+    skip "По выбору пользователя"
   fi
 }
 
@@ -882,6 +942,12 @@ set_timezone() {
   fi
 
   info "Найдено: ${found_name:-$city}${found_country:+, $found_country} — часовой пояс: $tz"
+
+  if [ -n "$cur_zone" ] && [ "$tz" = "$cur_zone" ]; then
+    skip "Часовой пояс уже установлен: $tz"
+    return
+  fi
+
   ask_yn "Применить этот часовой пояс?" y || { skip "По выбору пользователя"; return; }
 
   pkg_install "zoneinfo-core" "zoneinfo (данные часовых поясов)"
@@ -940,6 +1006,9 @@ main() {
   check_prereqs
   banner
   detect_system
+  show_script_description
+  press_enter_to_start
+
   check_internet
 
   install_stock_openwrt_repos
