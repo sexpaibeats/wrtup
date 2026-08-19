@@ -1,6 +1,6 @@
 #!/bin/sh
 # ==============================================================================
-# Поддержка OpenWrt 24 / 25+ / прошивки от GL.iNet (4.5+)
+# Поддержка OpenWrt/Immortalwrt (24 / 25+) / прошивки GL.iNet (4.5+)
 # Пакетные менеджеры: opkg / apk
 # ==============================================================================
 
@@ -43,27 +43,59 @@ info "Устройство: $MODEL"
 info "Система: $OS_VER | Менеджер: $PM"
 info "ОЗУ: ${TOTAL_RAM} MB"
 
-# Запрос на сетевые твики
+# Запрос на сетевые твики (фикс чтения из TTY для pipe-установки)
 printf "${C}[?]${W} Применить ли сетевые твики (Sysctl TCP, Wi-Fi AQL)? (y/N)
 
 Подробнее о твиках:
-Твики ядра и TCP (Sysctl):
- ⁠net.ipv4.tcp_fastopen=3⁠ — включает TCP Fast Open. Позволяет отправлять данные уже в самом первом пакете (SYN) при установке соединения. Ускоряет открытие страниц, снижает задержки (полезно при работе с прокси/VLESS).
- ⁠net.ipv4.tcp_slow_start_after_idle=0⁠ — отключает «медленный старт» после простоя. Соединение не будет заново плавно разгоняться, а сразу продолжит на максимальной скорости.
- ⁠net.core.somaxconn=4096⁠ и ⁠net.ipv4.tcp_max_syn_backlog=8192⁠ — увеличивают лимит полуоткрытых соединений и очередь прослушивания. Защищают роутер от захлебывания при агрессивном скачивании торрентов с тысячами пиров или при DDoS-подобной нагрузке.
- ⁠net.core.netdev_max_backlog=16384⁠ — увеличивает буфер пакетов сетевой карты. Идеально для 2.5G портов, чтобы пакеты не терялись при пиковых всплесках трафика. На роутерах с 1 ГБ ОЗУ (Flint 2) выделение памяти под этот буфер вообще незаметно.
-Твики Wi-Fi (AQL — Airtime Queue Limits):
- Это продвинутый механизм борьбы с Bufferbloat (раздуванием буфера) на беспроводном интерфейсе.
- Если кто-то начинает скачивать тяжелый файл по Wi-Fi, радиоэфир забивается. Без AQL пинг в играх у других устройств по Wi-Fi может повышаться до 100–300 мс.
- ⁠aql_txq_limit⁠, ⁠fq_limit⁠ — аппаратно включают алгоритм Fair Queuing (честная очередь) на уровне радиодрайвера ⁠mac80211⁠. Пинг остается стабильным даже при забитом эфире. : "
-read APPLY_TWEAKS
+• Sysctl (TCP): Ускоряет установку соединений (TCP Fast Open), убирает "медленный старт" после пауз, увеличивает буферы сетевой карты (для 2.5G портов) и лимиты подключений для торрентов/DDoS.
+• AQL (Wi-Fi): Аппаратно включает "честную очередь" на уровне радиочипа. Предотвращает скачки пинга в играх (Bufferbloat), когда кто-то другой забивает Wi-Fi скачиванием тяжелых файлов. : "
+read APPLY_TWEAKS < /dev/tty
 
 echo "----------------------------------------------------"
 
-# 2. Обновление пакетов
-info "Обновление стоковых репозиториев..."
+# 2. Добавление официальных репозиториев (OpenWrt / ImmortalWrt)
+info "Добавление стоковых репозиториев..."
+if [ -f /etc/openwrt_release ]; then
+    . /etc/openwrt_release
+    
+    if echo "$DISTRIB_DESCRIPTION" | grep -iq "immortalwrt"; then
+        REPO_BASE="https://mirrors.vsean.net/openwrt/releases/${DISTRIB_RELEASE}"
+        IS_IMMO=1
+    else
+        REPO_BASE="https://downloads.openwrt.org/releases/${DISTRIB_RELEASE}"
+        IS_IMMO=0
+    fi
+
+    if [ "$PM" = "apk" ]; then
+        REPO_FILE="/etc/apk/repositories.d/custom_feeds.list"
+        mkdir -p /etc/apk/repositories.d
+        cat <<EOF > "$REPO_FILE"
+$REPO_BASE/targets/$DISTRIB_TARGET/packages
+$REPO_BASE/packages/$DISTRIB_ARCH/base
+$REPO_BASE/packages/$DISTRIB_ARCH/luci
+$REPO_BASE/packages/$DISTRIB_ARCH/packages
+$REPO_BASE/packages/$DISTRIB_ARCH/routing
+$REPO_BASE/packages/$DISTRIB_ARCH/telephony
+EOF
+        [ "$IS_IMMO" -eq 0 ] && echo "$REPO_BASE/packages/$DISTRIB_ARCH/video" >> "$REPO_FILE"
+    else
+        REPO_FILE="/etc/opkg/customfeeds.conf"
+        cat <<EOF > "$REPO_FILE"
+src/gz custom_core $REPO_BASE/targets/$DISTRIB_TARGET/packages
+src/gz custom_base $REPO_BASE/packages/$DISTRIB_ARCH/base
+src/gz custom_luci $REPO_BASE/packages/$DISTRIB_ARCH/luci
+src/gz custom_packages $REPO_BASE/packages/$DISTRIB_ARCH/packages
+src/gz custom_routing $REPO_BASE/packages/$DISTRIB_ARCH/routing
+src/gz custom_telephony $REPO_BASE/packages/$DISTRIB_ARCH/telephony
+EOF
+        [ "$IS_IMMO" -eq 0 ] && echo "src/gz custom_video $REPO_BASE/packages/$DISTRIB_ARCH/video" >> "$REPO_FILE"
+    fi
+    ok "Сгенерированы репозитории для $DISTRIB_RELEASE ($DISTRIB_TARGET)."
+fi
+
+info "Обновление списков пакетов..."
 $PM_UPD >/dev/null 2>&1 || { err "Ошибка обновления пакетов. Проверьте интернет!"; exit 1; }
-ok "Репозитории обновлены."
+ok "Списки пакетов обновлены."
 
 # 3. Интеграция с GL.iNet
 if [ "$IS_GLINET" -eq 1 ]; then
@@ -86,13 +118,30 @@ if [ "$IS_GLINET" -eq 1 ]; then
         fi
     fi
 else
-    info "Роутер не от GL.iNet, пропуск."
+    info "Роутер не от GL.iNet, пропуск фиксов производителя."
 fi
 
-# 4. Базовые утилиты
-info "Установка базовых пакетов (SFTP, nano, htop...)"
-$PM_INS openssh-sftp-server unzip nano-full lm-sensors ethtool iperf3 htop >/dev/null 2>&1
-ok "Базовые утилиты установлены."
+# 4. Базовые утилиты (с индивидуальной проверкой)
+info "Установка базовых утилит..."
+PACKAGES="openssh-sftp-server unzip nano-full lm-sensors ethtool iperf3 htop"
+
+for pkg in $PACKAGES; do
+    if [ "$PM" = "apk" ]; then
+        if apk info -e $pkg >/dev/null 2>&1; then
+            ok "$pkg уже установлен."
+        else
+            info "Установка $pkg..."
+            $PM_INS $pkg >/dev/null 2>&1 && ok "$pkg установлен." || err "Ошибка установки $pkg."
+        fi
+    else
+        if opkg status $pkg 2>/dev/null | grep -q "Status: install ok installed"; then
+            ok "$pkg уже установлен."
+        else
+            info "Установка $pkg..."
+            $PM_INS $pkg >/dev/null 2>&1 && ok "$pkg установлен." || err "Ошибка установки $pkg."
+        fi
+    fi
+done
 
 # 5. zRAM
 info "Настройка zRAM..."
@@ -113,19 +162,21 @@ if uci get system.@system[0] >/dev/null 2>&1; then
 fi
 
 # 6. Установка Forkop
-info "Установка/Проверка Forkop..."
+info "Проверка Forkop..."
 if command -v forkop >/dev/null 2>&1; then
     ok "Forkop уже установлен."
 else
+    info "Установка Forkop..."
     sh -c "$(curl -sL https://raw.githubusercontent.com/ushan0v/forkop/main/install.sh)" >/dev/null 2>&1 || true
     ok "Установщик Forkop отработал."
 fi
 
 # 7. Тема Footstrap
-info "Установка темы Footstrap..."
+info "Проверка темы Footstrap..."
 if uci get luci.themes.Footstrap >/dev/null 2>&1; then
     ok "Тема Footstrap уже установлена."
 else
+    info "Установка темы Footstrap..."
     sh -c "$(curl -sL https://raw.githubusercontent.com/VizzleTF/luci-theme-footstrap/main/install.sh)" >/dev/null 2>&1 || true
     uci set luci.main.mediaurlbase='/luci-static/footstrap'
     uci commit luci
@@ -133,10 +184,11 @@ else
 fi
 
 # 8. Модуль температур
-info "Установка luci-app-temp-status..."
+info "Проверка luci-app-temp-status..."
 if uci get luci.temp-status >/dev/null 2>&1 || ls /usr/share/luci/menu.d/luci-app-temp-status* >/dev/null 2>&1; then
-    ok "Модуль температур установлен."
+    ok "Модуль температур уже установлен."
 else
+    info "Установка luci-app-temp-status..."
     if [ "$PM" = "apk" ]; then
         curl -sL "https://github.com/gSpotx2f/packages-openwrt/raw/master/25.12/luci-app-temp-status-0.8.1-r1.apk" -o "/tmp/temp.apk"
         apk add --allow-untrusted "/tmp/temp.apk" >/dev/null 2>&1
@@ -156,7 +208,7 @@ if ! grep -q "scaling_governor" /etc/rc.local; then
     sed -i '/exit 0/i echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null 2>&1' /etc/rc.local
     ok "Governor 'performance' применен."
 else
-    ok "Governor уже настроен."
+    ok "Governor 'performance' уже настроен."
 fi
 
 # 10. Сетевые твики (Sysctl + AQL)
@@ -195,8 +247,9 @@ else
 fi
 
 # 11. Интерфейс VPN
-info "Создание интерфейса br-vpnnet (192.168.20.0/24)..."
+info "Проверка интерфейса br-vpnnet (192.168.20.0/24)..."
 if ! uci get network.vpnnet >/dev/null 2>&1; then
+    info "Создание интерфейса br-vpnnet..."
     uci set network.vpnnet='interface'
     uci set network.vpnnet.proto='static'
     uci set network.vpnnet.device='br-vpnnet'
@@ -228,12 +281,20 @@ if ! uci get network.vpnnet >/dev/null 2>&1; then
     /etc/init.d/firewall restart >/dev/null 2>&1
     ok "br-vpnnet и firewall-зоны созданы."
 else
-    warn "Интерфейс vpnnet уже существует."
+    ok "Интерфейс vpnnet уже существует."
 fi
 
 # 12. MiniUPnP
 info "Настройка MiniUPnP (проброс портов)..."
-if [ "$PM" = "apk" ]; then $PM_INS miniupnpd-nftables >/dev/null 2>&1; else $PM_INS miniupnpd >/dev/null 2>&1; fi
+UPNP_PKG="miniupnpd"
+[ "$PM" = "apk" ] && UPNP_PKG="miniupnpd-nftables"
+
+if command -v upnpd >/dev/null 2>&1 || ls /etc/init.d/miniupnpd >/dev/null 2>&1; then
+    ok "Пакет $UPNP_PKG уже установлен."
+else
+    $PM_INS $UPNP_PKG >/dev/null 2>&1
+    ok "Пакет $UPNP_PKG установлен."
+fi
 
 if uci get upnpd.config >/dev/null 2>&1; then
     uci set upnpd.config.enabled='1'
@@ -241,16 +302,23 @@ if uci get upnpd.config >/dev/null 2>&1; then
     uci set upnpd.config.enable_natpmp='1'
     uci set upnpd.config.secure_mode='1'
     uci set upnpd.config.external_iface='wan'
-    
-    uci delete upnpd.config.internal_iface 2>/dev/null || true
-    uci add_list upnpd.config.internal_iface='lan'
-    uci add_list upnpd.config.internal_iface='vpnnet'
-    
     uci set upnpd.config.log_output='1'
-    uci commit upnpd
+
+    # Проверка, добавлены ли уже интерфейсы
+    HAS_LAN=$(uci show upnpd | grep internal_iface | grep -c "'lan'")
+    HAS_VPN=$(uci show upnpd | grep internal_iface | grep -c "'vpnnet'")
+
+    if [ "$HAS_LAN" -eq 0 ] || [ "$HAS_VPN" -eq 0 ]; then
+        uci delete upnpd.config.internal_iface 2>/dev/null || true
+        uci add_list upnpd.config.internal_iface='lan'
+        uci add_list upnpd.config.internal_iface='vpnnet'
+        uci commit upnpd
+        /etc/init.d/miniupnpd restart 2>/dev/null || true
+        ok "MiniUPnP перенастроен (добавлен vpnnet)."
+    else
+        ok "MiniUPnP уже настроен для lan и vpnnet."
+    fi
     /etc/init.d/miniupnpd enable 2>/dev/null || true
-    /etc/init.d/miniupnpd restart 2>/dev/null || true
-    ok "UPnP активирован (lan + vpnnet)."
 else
     err "Не найден конфиг UPnP."
 fi
