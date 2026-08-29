@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Redirect</title>
+</head>
+<body style="background:#000;color:#fff;text-align:center;padding-top:20%;font-family:sans-serif;">
+  <p>Открываю приложение YouTube...</p>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const vid = params.get('v');
+    if (vid) {
+      // 1. Пытаемся открыть приложение YouTube
+      window.location.replace("youtube://watch?v=" + vid);
+      
+      // 2. Через полсекунды перекидываем обратно в Telegram (закрываем Safari визуально)
+      setTimeout(() => {
+        window.location.replace("tg://resolve");
+      }, 500);
+      
+      // 3. Если вдруг на телефоне нет приложения YT, через 1.5 сек кидаем в браузерный YT
+      setTimeout(() => {
+        window.location.replace("https://www.youtube.com/watch?v=" + vid);
+      }, 1500);
+    }
+  </script>
+</body>
+</html>
