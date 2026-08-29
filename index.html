@@ -1,33 +1,66 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Открытие YouTube...</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Редирект...</title>
     <style>
-        body { background-color: #121212; color: #ffffff; font-family: -apple-system, sans-serif; text-align: center; padding-top: 40vh; margin: 0; }
+        body { 
+            background-color: #1a1a1a; color: white; font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+            text-align: center; padding: 20px; padding-top: 15vh; margin: 0;
+        }
+        .spinner { 
+            border: 4px solid #333; border-top: 4px solid #ff0000; border-radius: 50%; 
+            width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 40px auto; 
+        }
+        .btn {
+            display: none; margin-top: 30px; background-color: #0088cc; color: white;
+            text-decoration: none; padding: 18px 24px; border-radius: 12px;
+            font-size: 18px; font-weight: bold; width: 100%; box-sizing: border-box;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
-    <script>
-        window.onload = function() {
-            var urlParams = new URLSearchParams(window.location.search);
-            var videoId = urlParams.get('v');
-            
-            if (videoId) {
-                // 1. Триггерим открытие приложения YouTube (iOS переключит приложение)
-                window.location.href = "youtube://watch?v=" + videoId;
-                
-                // 2. Через 500 миллисекунд (пока открывается ютуб) кидаем команду Telegram закрыть браузер.
-                // ВАЖНО: Замени YOUR_BOT_USERNAME на юзернейм твоего бота (без символа @)
-                setTimeout(function() {
-                    window.location.replace("tg://resolve?domain=ytpushrobot");
-                }, 500);
-            } else {
-                document.body.innerHTML = "<h3>Видео не найдено</h3>";
-            }
-        };
-    </script>
 </head>
 <body>
-    <h3>Запуск приложения...</h3>
+    <h2 id="title">Открываем YouTube...</h2>
+    <div class="spinner" id="spinner"></div>
+    <!-- Большая кнопка, которая гарантированно пробивает блокировку iOS -->
+    <a id="back-btn" class="btn" href="tg://resolve?domain=YOUR_BOT_USERNAME">🔙 Вернуться в Telegram</a>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoId = urlParams.get('v');
+        const tgDomain = "ytpushrobot"; // <--- ВПИШИ ЮЗЕРНЕЙМ БОТА ТУТ (без @)
+
+        if (videoId) {
+            // 1. Автоматически кидаем в приложение ютуба (этот редирект iOS пропустит)
+            window.location.href = "youtube://watch?v=" + videoId;
+
+            // 2. Ловим момент, когда ты свернул Ютуб и вернулся в Телеграм!
+            document.addEventListener("visibilitychange", function() {
+                if (!document.hidden) {
+                    // Страница снова стала активной
+                    document.getElementById("title").innerText = "Приложение открыто ✅";
+                    document.getElementById("spinner").style.display = "none";
+                    document.getElementById("back-btn").style.display = "block";
+                    
+                    // Делаем вторую попытку авто-редиректа. 
+                    // Т.к. контекст поменялся (ты вернулся на вкладку), iOS может это пропустить
+                    window.location.replace("tg://resolve?domain=" + tgDomain);
+                }
+            });
+
+            // 3. Фолбэк-таймер: если через 2 секунды мы все еще тут, выводим кнопку руками
+            setTimeout(() => {
+                document.getElementById("spinner").style.display = "none";
+                document.getElementById("title").innerText = "Приложение открыто ✅";
+                document.getElementById("back-btn").style.display = "block";
+            }, 2000);
+
+        } else {
+            document.body.innerHTML = "<h2>Ошибка: нет ID видео</h2>";
+        }
+    </script>
 </body>
 </html>
