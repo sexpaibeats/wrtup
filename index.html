@@ -1,29 +1,33 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YouTube Redirect</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Открытие YouTube...</title>
+    <style>
+        body { background-color: #121212; color: #ffffff; font-family: -apple-system, sans-serif; text-align: center; padding-top: 40vh; margin: 0; }
+    </style>
+    <script>
+        window.onload = function() {
+            var urlParams = new URLSearchParams(window.location.search);
+            var videoId = urlParams.get('v');
+            
+            if (videoId) {
+                // 1. Триггерим открытие приложения YouTube (iOS переключит приложение)
+                window.location.href = "youtube://watch?v=" + videoId;
+                
+                // 2. Через 500 миллисекунд (пока открывается ютуб) кидаем команду Telegram закрыть браузер.
+                // ВАЖНО: Замени YOUR_BOT_USERNAME на юзернейм твоего бота (без символа @)
+                setTimeout(function() {
+                    window.location.replace("tg://resolve?domain=ytpushrobot");
+                }, 500);
+            } else {
+                document.body.innerHTML = "<h3>Видео не найдено</h3>";
+            }
+        };
+    </script>
 </head>
-<body style="background:#000;color:#fff;text-align:center;padding-top:20%;font-family:sans-serif;">
-  <p>Открываю приложение YouTube...</p>
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const vid = params.get('v');
-    if (vid) {
-      // 1. Пытаемся открыть приложение YouTube
-      window.location.replace("youtube://watch?v=" + vid);
-      
-      // 2. Через полсекунды перекидываем обратно в Telegram (закрываем Safari визуально)
-      setTimeout(() => {
-        window.location.replace("tg://resolve");
-      }, 500);
-      
-      // 3. Если вдруг на телефоне нет приложения YT, через 1.5 сек кидаем в браузерный YT
-      setTimeout(() => {
-        window.location.replace("https://www.youtube.com/watch?v=" + vid);
-      }, 1500);
-    }
-  </script>
+<body>
+    <h3>Запуск приложения...</h3>
 </body>
 </html>
