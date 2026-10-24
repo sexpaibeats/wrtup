@@ -2,65 +2,283 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>Редирект...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>Переход в YouTube...</title>
     <style>
-        body { 
-            background-color: #1a1a1a; color: white; font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
-            text-align: center; padding: 20px; padding-top: 15vh; margin: 0;
+        :root {
+            --bg-color: #0f0f0f;
+            --card-bg: #1e1e1e;
+            --text-primary: #f1f1f1;
+            --text-secondary: #aaaaaa;
+            --yt-red: #ff0033;
+            --tg-blue: #2481cc;
         }
-        .spinner { 
-            border: 4px solid #333; border-top: 4px solid #ff0000; border-radius: 50%; 
-            width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 40px auto; 
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
         }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 360px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .logo-wrap {
+            position: relative;
+            width: 76px;
+            height: 76px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .yt-icon {
+            width: 44px;
+            height: 44px;
+            fill: var(--yt-red);
+            filter: drop-shadow(0 0 14px rgba(255, 0, 51, 0.45));
+            z-index: 2;
+        }
+
+        .spinner-ring {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 3px solid rgba(255, 255, 255, 0.08);
+            border-top-color: var(--yt-red);
+            border-radius: 50%;
+            animation: spin 0.85s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+        }
+
+        h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: -0.2px;
+        }
+
+        p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 28px;
+            line-height: 1.4;
+        }
+
+        .btn-group {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+        }
+
+        .btn-group.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
         .btn {
-            display: none; margin-top: 30px; background-color: #0088cc; color: white;
-            text-decoration: none; padding: 18px 24px; border-radius: 12px;
-            font-size: 18px; font-weight: bold; width: 100%; box-sizing: border-box;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 14px 18px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .btn-secondary {
+            background-color: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:active {
+            background-color: rgba(255, 255, 255, 0.14);
+            transform: scale(0.98);
+        }
+
+        .btn-tg {
+            background-color: var(--tg-blue);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(36, 129, 204, 0.3);
+        }
+
+        .btn-tg:active {
+            transform: scale(0.98);
+            filter: brightness(0.92);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
-    <h2 id="title">Открываем YouTube...</h2>
-    <div class="spinner" id="spinner"></div>
-    <!-- Большая кнопка, которая гарантированно пробивает блокировку iOS -->
-    <a id="back-btn" class="btn" href="tg://resolve?domain=YOUR_BOT_USERNAME">🔙 Вернуться в Telegram</a>
+    <div class="container">
+        <div class="logo-wrap">
+            <div class="spinner-ring" id="ring"></div>
+            <svg class="yt-icon" viewBox="0 0 24 24">
+                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+            </svg>
+        </div>
+
+        <h2 id="title">Открываем YouTube...</h2>
+        <p id="desc">Переключаем в приложение трансляции</p>
+
+        <div class="btn-group" id="btn-group">
+            <a id="btn-open-web" class="btn btn-secondary" href="#">🌐 Открыть в браузере</a>
+            <a id="btn-back-tg" class="btn btn-tg" href="#">🔙 Вернуться в Telegram</a>
+        </div>
+    </div>
 
     <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const videoId = urlParams.get('v');
-        const tgDomain = "ytpushrobot"; // <--- ВПИШИ ЮЗЕРНЕЙМ БОТА ТУТ (без @)
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const videoId = params.get('v');
+            const timeCode = params.get('t') || '';
+            const tgBot = params.get('b') || 'ytpushrobot';
 
-        if (videoId) {
-            // 1. Автоматически кидаем в приложение ютуба (этот редирект iOS пропустит)
-            window.location.href = "youtube://watch?v=" + videoId;
+            if (!videoId) {
+                document.getElementById('title').innerText = 'Ошибка';
+                document.getElementById('desc').innerText = 'Не передан ID видеоролика (?v=...)';
+                document.getElementById('ring').style.display = 'none';
+                return;
+            }
 
-            // 2. Ловим момент, когда ты свернул Ютуб и вернулся в Телеграм!
-            document.addEventListener("visibilitychange", function() {
-                if (!document.hidden) {
-                    // Страница снова стала активной
-                    document.getElementById("title").innerText = "Приложение открыто ✅";
-                    document.getElementById("spinner").style.display = "none";
-                    document.getElementById("back-btn").style.display = "block";
-                    
-                    // Делаем вторую попытку авто-редиректа. 
-                    // Т.к. контекст поменялся (ты вернулся на вкладку), iOS может это пропустить
-                    window.location.replace("tg://resolve?domain=" + tgDomain);
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isAndroid = /Android/.test(navigator.userAgent);
+            const isDesktop = !isIOS && !isAndroid;
+
+            const timeParam = timeCode ? `&t=${encodeURIComponent(timeCode)}` : '';
+
+            // Целевые URL
+            const webUrl = `https://www.youtube.com/watch?v=${videoId}${timeParam}`;
+            const tgUrl = `tg://resolve?domain=${encodeURIComponent(tgBot)}`;
+
+            // Настройка резервных кнопок
+            const btnWeb = document.getElementById('btn-open-web');
+            const btnTg = document.getElementById('btn-back-tg');
+            btnWeb.href = webUrl;
+            btnTg.href = tgUrl;
+
+            // Надежное закрытие вкладки / In-App браузера Telegram
+            function closeSelf() {
+                try {
+                    window.opener = null;
+                    window.open('', '_self');
+                    window.close();
+                } catch (e) {}
+
+                // Внутри Telegram In-App Browser (Safari View Controller на iOS / Custom Tabs на Android)
+                // history.back() мгновенно закрывает вебвью и возвращает пользователя в чат Telegram:
+                setTimeout(() => {
+                    try {
+                        if (window.history.length > 1) {
+                            window.history.back();
+                        } else {
+                            window.location.replace(tgUrl);
+                        }
+                    } catch (e) {}
+                }, 120);
+            }
+
+            let appOpened = false;
+
+            // Ловим момент, когда ОС переключила фокус на приложение YouTube
+            function onPageDeactivated() {
+                appOpened = true;
+            }
+
+            // Когда пользователь возвращается обратно в Telegram
+            function onPageReactivated() {
+                if (appOpened) {
+                    // YouTube уже был открыт — моментально закрываем страницу
+                    closeSelf();
+                }
+            }
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    onPageDeactivated();
+                } else {
+                    onPageReactivated();
                 }
             });
 
-            // 3. Фолбэк-таймер: если через 2 секунды мы все еще тут, выводим кнопку руками
-            setTimeout(() => {
-                document.getElementById("spinner").style.display = "none";
-                document.getElementById("title").innerText = "Приложение открыто ✅";
-                document.getElementById("back-btn").style.display = "block";
-            }, 2000);
+            window.addEventListener('pagehide', onPageDeactivated);
+            window.addEventListener('blur', onPageDeactivated);
 
-        } else {
-            document.body.innerHTML = "<h2>Ошибка: нет ID видео</h2>";
-        }
+            // 1. Обработка Desktop (ПК / Mac):
+            if (isDesktop) {
+                // На десктопе схема youtube:// вызывает ошибку ОС "Неизвестный протокол" —
+                // поэтому сразу мгновенно перенаправляем на веб-сайт
+                window.location.replace(webUrl);
+                return;
+            }
+
+            // 2. Обработка мобильных платформ:
+            if (isAndroid) {
+                // Нативный Android Intent: открывает YouTube/ReVanced напрямую без дурацкого
+                // системного диалога "Открыть с помощью Chrome или YouTube?"
+                const intentUrl = `intent://www.youtube.com/watch?v=${videoId}${timeParam}#Intent;package=com.google.android.youtube;scheme=https;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+                window.location.href = intentUrl;
+            } else if (isIOS) {
+                // Родной deeplink iOS
+                window.location.href = `youtube://watch?v=${videoId}${timeParam}`;
+            }
+
+            // Фоновая попытка закрытия через 700мс (если система разрешила запуск)
+            setTimeout(() => {
+                if (appOpened) {
+                    closeSelf();
+                }
+            }, 700);
+
+            // Резервный таймер: если через 1.8с мы всё ещё здесь
+            // (например, приложения YouTube нет или пользователь отклонил открытие),
+            // мягко показываем кнопки ручного выбора
+            setTimeout(() => {
+                document.getElementById('ring').style.display = 'none';
+                document.getElementById('title').innerText = 'Открыть трансляцию';
+                document.getElementById('desc').innerText = 'Если приложение не запустилось автоматически, выберите действие:';
+                document.getElementById('btn-group').classList.add('visible');
+            }, 1800);
+
+        })();
     </script>
 </body>
 </html>
