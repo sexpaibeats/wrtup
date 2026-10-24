@@ -212,14 +212,14 @@
         const timeCode = urlParams.get('t') || urlParams.get('time');
 
         function closeApp() {
-            // 1. Нативное закрытие Telegram WebApp
+            // 1. Моментальное закрытие Telegram WebApp
             try {
                 if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
                     window.Telegram.WebApp.close();
                 }
             } catch (e) {}
 
-            // 2. Закрытие вкладки браузера
+            // 2. Стандартное закрытие вкладки браузера
             try {
                 window.opener = null;
                 window.open('', '_self');
@@ -245,33 +245,15 @@
             const isAndroid = /Android/.test(navigator.userAgent);
             const isDesktop = !isIOS && !isAndroid;
 
-            // Загрузка обложки стрима
-            const thumbUrl = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
-            const imgEl = document.getElementById('preview-img');
-            const bgEl = document.getElementById('backdrop');
-
-            imgEl.src = thumbUrl;
-            imgEl.onload = function() {
-                imgEl.style.display = 'block';
-                bgEl.style.backgroundImage = "url('" + thumbUrl + "')";
-                bgEl.style.opacity = '1';
-            };
-
-            const btnApp = document.getElementById('btn-open-app');
-            const btnWeb = document.getElementById('btn-open-web');
-            const btnClose = document.getElementById('btn-close');
-
-            btnWeb.href = webUrl;
-            btnApp.href = isIOS ? iosDeepLink : (isAndroid ? androidIntent : webUrl);
-
             let appOpened = false;
 
-            // Ловим момент, когда ОС переключила фокус на приложение YouTube
+            // Как только страница теряет фокус (YouTube перехватывает управление) — моментально закрываем!
             function onPageDeactivated() {
                 appOpened = true;
+                closeApp();
             }
 
-            // Когда пользователь возвращается обратно из приложения YouTube (или на страницу)
+            // При возврате пользователя на страницу (если она ещё осталась) — моментальное закрытие
             function onPageReactivated() {
                 if (appOpened) {
                     closeApp();
@@ -293,36 +275,53 @@
                     closeApp();
                 }
             });
+            window.addEventListener('focus', () => {
+                if (appOpened) {
+                    closeApp();
+                }
+            });
 
-            // Обработка перехода
+            // 1. МГНОВЕННЫЙ ЗАПУСК РЕДИРЕКТА (без задержек на обработку DOM и картинок):
             if (isDesktop) {
-                // На ПК сразу открываем веб-версию
                 window.location.replace(webUrl);
                 return;
-            }
-
-            // Мобильные устройства: запуск диплинка
-            if (isAndroid) {
+            } else if (isAndroid) {
                 window.location.href = androidIntent;
             } else if (isIOS) {
                 window.location.href = iosDeepLink;
             }
 
-            // Фоновая попытка автоматического закрытия страницы через 500мс
-            setTimeout(() => {
-                if (appOpened) {
-                    closeApp();
-                }
-            }, 500);
+            // 2. Быстрые попытки фонового закрытия после отправки команды на запуск YouTube:
+            setTimeout(() => { if (appOpened) closeApp(); }, 120);
+            setTimeout(() => { if (appOpened) closeApp(); }, 280);
 
-            // Резервный таймер: если приложение не запустилось (например, YouTube не установлен),
-            // показываем кнопки ручного выбора и кнопку закрытия
+            // 3. Фоновая подгрузка обложки и настройка резервных кнопок (на случай если YouTube не установлен):
+            const thumbUrl = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
+            const imgEl = document.getElementById('preview-img');
+            const bgEl = document.getElementById('backdrop');
+
+            imgEl.src = thumbUrl;
+            imgEl.onload = function() {
+                imgEl.style.display = 'block';
+                bgEl.style.backgroundImage = "url('" + thumbUrl + "')";
+                bgEl.style.opacity = '1';
+            };
+
+            const btnApp = document.getElementById('btn-open-app');
+            const btnWeb = document.getElementById('btn-open-web');
+            const btnClose = document.getElementById('btn-close');
+
+            btnWeb.href = webUrl;
+            btnApp.href = isIOS ? iosDeepLink : (isAndroid ? androidIntent : webUrl);
+
+            // Резервный таймер: если диплинк не сработал (например, YouTube не установлен),
+            // через 1.2с показываем ручной выбор и кнопку закрытия
             setTimeout(() => {
                 document.getElementById('spinner').style.display = 'none';
                 document.getElementById('title').innerText = 'Открыть трансляцию';
                 document.getElementById('desc').innerText = 'Если приложение не запустилось автоматически, выберите действие:';
                 btnClose.style.display = 'flex';
-            }, 1500);
+            }, 1200);
         })();
     </script>
 </body>
