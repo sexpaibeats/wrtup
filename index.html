@@ -210,34 +210,21 @@
         const urlParams = new URLSearchParams(window.location.search);
         const videoId = urlParams.get('v') || urlParams.get('video') || urlParams.get('id');
         const timeCode = urlParams.get('t') || urlParams.get('time');
-        const tgBot = urlParams.get('bot') || 'senpaixx_bot';
-        const tgUrl = 'tg://resolve?domain=' + encodeURIComponent(tgBot);
 
         function closeApp() {
-            // 1. Попытка нативного закрытия Telegram WebApp
+            // 1. Нативное закрытие Telegram WebApp
             try {
                 if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
                     window.Telegram.WebApp.close();
                 }
             } catch (e) {}
 
-            // 2. Стандартное закрытие вкладки браузера
+            // 2. Закрытие вкладки браузера
             try {
                 window.opener = null;
                 window.open('', '_self');
                 window.close();
             } catch (e) {}
-
-            // 3. Telegram In-App Browser (Safari View Controller на iOS / Custom Tabs на Android)
-            setTimeout(() => {
-                try {
-                    if (window.history.length > 1) {
-                        window.history.back();
-                    } else {
-                        window.location.replace(tgUrl);
-                    }
-                } catch (e) {}
-            }, 100);
         }
 
         (function() {
@@ -321,20 +308,21 @@
                 window.location.href = iosDeepLink;
             }
 
-            // Фоновая попытка автоматического закрытия страницы через 700мс
+            // Фоновая попытка автоматического закрытия страницы через 500мс
             setTimeout(() => {
                 if (appOpened) {
                     closeApp();
                 }
-            }, 700);
+            }, 500);
 
-            // Резервный таймер: если приложение не запустилось автоматически, показываем выбор
+            // Резервный таймер: если приложение не запустилось (например, YouTube не установлен),
+            // показываем кнопки ручного выбора и кнопку закрытия
             setTimeout(() => {
                 document.getElementById('spinner').style.display = 'none';
                 document.getElementById('title').innerText = 'Открыть трансляцию';
                 document.getElementById('desc').innerText = 'Если приложение не запустилось автоматически, выберите действие:';
                 btnClose.style.display = 'flex';
-            }, 1800);
+            }, 1500);
         })();
     </script>
 </body>
