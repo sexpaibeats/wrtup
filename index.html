@@ -207,33 +207,40 @@
             } catch (e) {}
         }
 
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoId = urlParams.get('v') || urlParams.get('video') || urlParams.get('id');
+        const timeCode = urlParams.get('t') || urlParams.get('time');
+        const tgBot = urlParams.get('bot') || 'senpaixx_bot';
+        const tgUrl = 'tg://resolve?domain=' + encodeURIComponent(tgBot);
+
         function closeApp() {
+            // 1. Попытка нативного закрытия Telegram WebApp
             try {
-                if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.close) {
+                if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.close === 'function') {
                     window.Telegram.WebApp.close();
-                    return;
                 }
             } catch (e) {}
 
-            try {
-                if (window.history.length > 1) {
-                    window.history.back();
-                    return;
-                }
-            } catch (e) {}
-
+            // 2. Стандартное закрытие вкладки браузера
             try {
                 window.opener = null;
                 window.open('', '_self');
                 window.close();
             } catch (e) {}
+
+            // 3. Telegram In-App Browser (Safari View Controller на iOS / Custom Tabs на Android)
+            setTimeout(() => {
+                try {
+                    if (window.history.length > 1) {
+                        window.history.back();
+                    } else {
+                        window.location.replace(tgUrl);
+                    }
+                } catch (e) {}
+            }, 100);
         }
 
         (function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const videoId = urlParams.get('v') || urlParams.get('video') || urlParams.get('id');
-            const timeCode = urlParams.get('t') || urlParams.get('time');
-
             if (!videoId) {
                 document.getElementById('spinner').style.display = 'none';
                 document.getElementById('title').innerText = 'Видео не найдено';
@@ -242,24 +249,24 @@
                 return;
             }
 
-            const timeParam = timeCode ? `&t=${encodeURIComponent(timeCode)}` : '';
-            const webUrl = `https://www.youtube.com/watch?v=${videoId}${timeParam}`;
-            const iosDeepLink = `youtube://watch?v=${videoId}${timeParam}`;
-            const androidIntent = `intent://www.youtube.com/watch?v=${videoId}${timeParam}#Intent;package=com.google.android.youtube;scheme=https;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+            const timeParam = timeCode ? '&t=' + encodeURIComponent(timeCode) : '';
+            const webUrl = 'https://www.youtube.com/watch?v=' + videoId + timeParam;
+            const iosDeepLink = 'youtube://watch?v=' + videoId + timeParam;
+            const androidIntent = 'intent://www.youtube.com/watch?v=' + videoId + timeParam + '#Intent;package=com.google.android.youtube;scheme=https;S.browser_fallback_url=' + encodeURIComponent(webUrl) + ';end';
 
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
             const isAndroid = /Android/.test(navigator.userAgent);
             const isDesktop = !isIOS && !isAndroid;
 
             // Загрузка обложки стрима
-            const thumbUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+            const thumbUrl = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
             const imgEl = document.getElementById('preview-img');
             const bgEl = document.getElementById('backdrop');
 
             imgEl.src = thumbUrl;
             imgEl.onload = function() {
                 imgEl.style.display = 'block';
-                bgEl.style.backgroundImage = `url('${thumbUrl}')`;
+                bgEl.style.backgroundImage = "url('" + thumbUrl + "')";
                 bgEl.style.opacity = '1';
             };
 
@@ -269,6 +276,36 @@
 
             btnWeb.href = webUrl;
             btnApp.href = isIOS ? iosDeepLink : (isAndroid ? androidIntent : webUrl);
+
+            let appOpened = false;
+
+            // Ловим момент, когда ОС переключила фокус на приложение YouTube
+            function onPageDeactivated() {
+                appOpened = true;
+            }
+
+            // Когда пользователь возвращается обратно из приложения YouTube (или на страницу)
+            function onPageReactivated() {
+                if (appOpened) {
+                    closeApp();
+                }
+            }
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    onPageDeactivated();
+                } else {
+                    onPageReactivated();
+                }
+            });
+
+            window.addEventListener('pagehide', onPageDeactivated);
+            window.addEventListener('blur', onPageDeactivated);
+            window.addEventListener('pageshow', (e) => {
+                if (e.persisted || appOpened) {
+                    closeApp();
+                }
+            });
 
             // Обработка перехода
             if (isDesktop) {
@@ -284,23 +321,20 @@
                 window.location.href = iosDeepLink;
             }
 
-            // Когда пользователь возвращается обратно из приложения YouTube:
-            function handleReturn() {
+            // Фоновая попытка автоматического закрытия страницы через 700мс
+            setTimeout(() => {
+                if (appOpened) {
+                    closeApp();
+                }
+            }, 700);
+
+            // Резервный таймер: если приложение не запустилось автоматически, показываем выбор
+            setTimeout(() => {
                 document.getElementById('spinner').style.display = 'none';
-                document.getElementById('title').innerText = 'Трансляция открыта';
+                document.getElementById('title').innerText = 'Открыть трансляцию';
                 document.getElementById('desc').innerText = 'Если приложение не запустилось автоматически, выберите действие:';
                 btnClose.style.display = 'flex';
-            }
-
-            window.addEventListener('pagehide', handleReturn);
-            document.addEventListener('visibilitychange', () => {
-                if (!document.hidden) {
-                    handleReturn();
-                }
-            });
-
-            // Мягкий таймер на случай задержки
-            setTimeout(handleReturn, 1500);
+            }, 1800);
         })();
     </script>
 </body>
